@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+        <record id="view_hr_contract_novelty_form" model="ir.ui.view">
+            <field name="name">hr.contract.novelty.form</field>
+            <field name="model">hr.contract</field>
+            <field name="inherit_id" ref="hr_contract.hr_contract_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//notebook" position="inside">
+                    <page string="Novedades" name="pila_novelties">
+                        <field name="pila_novelty_ids">
+                            <list editable="bottom">
+                                <field name="novelty_type_id"/>
+                                <field name="date_start"/>
+                                <field name="date_end"/>
+                            </list>
+                        </field>
+                    </page>
+                </xpath>
+
+                <xpath expr="//group[@name='salary']" position="after">
+                    <group>
+                        <field name="date_wage_change"/>
+                    </group>
+                </xpath>
+
+                <xpath expr="//field[@name='auxilio_de_transporte']" position="after">
+                    <field name="wage_integral"/>
+                    <field name="wage_variable"/>
+                </xpath>
+
+                <xpath expr="//field[@name='AltoRiegoPension']" position="after">
+                    <field name="alto_riesgo"/>
+                    <field name="clase"/>
+                </xpath> 
+
+                <xpath expr="//field[@name='contract_type_id']" position="after">
+                    <field name="work_center_id"/>
+                    <field name="economic_activitity"/>
+                </xpath> 
+                 <xpath expr="//field[@name='date_start']" position="after">
+                    <field name="pila_ingreso_concepto_id"/>
+                </xpath> 
+                 <xpath expr="//field[@name='date_end']" position="after">
+                    <field name="pila_retiro_concepto_id"/>
+                </xpath> 
+
+                <xpath expr="//field[@name='tipo_trabajador']" position="attributes">
+                    <attribute name="invisible">1</attribute>
+                </xpath>
+                <xpath expr="//field[@name='tipo_trabajador']" position="after">
+                    <field name="pila_tipo_trabajador_id" />
+                </xpath>
+
+                <xpath expr="//field[@name='sub_tipo_trabajador']" position="attributes">
+                    <attribute name="invisible">1</attribute>
+                </xpath>
+                <xpath expr="//field[@name='sub_tipo_trabajador']" position="after">
+                    <field name="pila_subtipo_trabajador_id" />
+                </xpath>
+
+            </field>
+        </record>
+
+        <record id="view_hr_contract_form_inherit_dotacion" model="ir.ui.view">
+            <field name="name">hr.contract.form.inherit.dotacion</field>
+            <field name="model">hr.contract</field>
+            <field name="inherit_id" ref="fix_extructuras_de_pago.hr_contract_administradora_view"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='administradoras_ids']/form//field[@name='ccostos']" position="after">
+                    <field name="type_entity" widget="radio" options="{'horizontal': true}"/>
+                    <field name="show_ccf" invisible="1"/>
+                    
+                    <field name="list_administradora_id" 
+                           options="{'no_create': True, 'no_edit': True}" 
+                           invisible="not type_entity"/>
+                    
+                    <field name="tarifa"/>
+                    
+                    <field name="tarifa_sena" invisible="not show_ccf" required="show_ccf"/>
+                    <field name="tarifa_icbf" invisible="not show_ccf" required="show_ccf"/>
+                    <field name="tarifa_esap" invisible="not show_ccf" required="show_ccf"/>
+                    <field name="tarifa_men" invisible="not show_ccf" required="show_ccf"/>
+                    
+                    <field name="traslado"/>
+                    <field name="list_administradora_destino_id" 
+                           invisible="not traslado" 
+                           required="traslado"
+                           options="{'no_create': True, 'no_edit': True}"/>
+                </xpath>
+
+                </field>
+        </record>
+    </data>
+</odoo>

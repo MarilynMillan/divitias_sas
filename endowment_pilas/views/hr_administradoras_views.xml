@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_hr_administradoras_form_inherit_endowment" model="ir.ui.view">
+        <field name="name">hr.administradoras.form.inherit.endowment</field>
+        <field name="model">hr.administradoras</field>
+        <field name="inherit_id" ref="fix_extructuras_de_pago.administradoras_forma"/>
+        <field name="arch" type="xml">
+              <xpath expr="//field[@name='ccostos']" position="after">
+                <field name="tarifa"/>
+                <field name="show_ccf" invisible="True"/>
+                
+                <field name="tarifa_sena" invisible="not show_ccf" required="show_ccf"/>
+                <field name="tarifa_icbf" invisible="not show_ccf" required="show_ccf"/>
+                <field name="tarifa_esap" invisible="not show_ccf" required="show_ccf"/>
+                <field name="tarifa_men" invisible="not show_ccf" required="show_ccf"/>
+
+                <field name="type_entity" widget="radio" options="{'horizontal': true}"/>
+                
+                <field name="list_administradora_id" 
+                       options="{'no_create': True, 'no_edit': True}" 
+                       context="{'default_type_entity': type_entity}"
+                       invisible="not type_entity"/>
+
+                <field name="traslado"/>
+                <field name="list_administradora_destino_id"
+                       invisible="not traslado"
+                       required="traslado"
+                       options="{'no_create': True, 'no_edit': True}"/>
+
+                
+            </xpath>
+
+            <xpath expr="//field[@name='show_ccf']" position="attributes">
+            <attribute name="invisible">True</attribute>
+        </xpath>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_hr_contract_concept_tree" model="ir.ui.view">
+        <field name="name">hr.contract.concept.tree</field>
+        <field name="model">hr.contract.concept</field>
+        <field name="arch" type="xml">
+            <list >
+                <field name="name"/>
+                <field name="type"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_hr_contract_concept_form" model="ir.ui.view">
+        <field name="name">hr.contract.concept.form</field>
+        <field name="model">hr.contract.concept</field>
+        <field name="arch" type="xml">
+            <form string="Concepto ingreso/egreso">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                        </group>
+                        <group>
+                            <field name="type"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_hr_contract_concept" model="ir.actions.act_window">
+        <field name="name">Conceptos egreso/ingreso</field>
+        <field name="res_model">hr.contract.concept</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Concepto de ingreso y egreso
+            </p>
+        </field>
+    </record>
+
+    <menuitem 
+        id="menu_hr_contract_concept"
+        name="Concepto Ingreso/Egreso"
+        parent="hr_payroll.menu_hr_payroll_global_settings"
+        action="action_hr_contract_concept"
+        sequence="50" 
+    />
+
+</odoo>

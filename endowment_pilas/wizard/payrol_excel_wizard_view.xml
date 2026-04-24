@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_hr_payroll_excel_wizard_form" model="ir.ui.view">
+        <field name="name">hr.payroll.excel.wizard.form</field>
+        <field name="model">hr.payroll.excel.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Generar Pila">
+                <group>
+                    <group>
+                        <field name="date_from"/>
+                        <field name="date_to"/>
+                    </group>
+                    <group>
+                        <field name="payslip_run_id"/>
+                        <field name="plantilla_excel" filename="plantilla_excel_name" widget="binary"/>
+                        <field name="plantilla_excel_name" invisible="1"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_generate_excel_report" string="Generar Excel" type="object" class="btn-primary"/>
+
+                    <button name="action_generate_txt_pila" string="Convertir a TXT Aportes" type="object" class="btn-success"/>
+
+
+                    <button string="Cancelar" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_hr_payroll_excel_wizard" model="ir.actions.act_window">
+        <field name="name">Reporte Pila</field>
+        <field name="res_model">hr.payroll.excel.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_hr_payroll_excel_report"
+              name="Novedades Pila"
+              parent="hr_payroll.menu_hr_payroll_report"
+              action="action_hr_payroll_excel_wizard"
+              sequence="40"/>
+
+</odoo>

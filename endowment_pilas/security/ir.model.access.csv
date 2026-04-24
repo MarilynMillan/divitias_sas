@@ -1,0 +1,9 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hr_payroll_excel_wizard,hr.payroll.excel.wizard,model_hr_payroll_excel_wizard,,1,1,1,1
+access_pila_novelty_type,pila.novelty.type,model_pila_novelty_type,,1,1,1,1
+access_hr_contract_novelty_line,hr.contract.novelty.line,model_hr_contract_novelty_line,,1,1,1,1
+access_hr_work_center,hr_work_center,model_hr_work_center,,1,1,1,1
+access_hr_contract_concept,hr.contract.concept,model_hr_contract_concept,,1,1,1,1
+access_list_administradoras,list.administradoras,model_list_administradoras,,1,1,1,1
+access_pila_tipo_trabajador,access.pila.tipo.trabajador,model_pila_tipo_trabajador,,1,1,1,1
+access_pila_subtipo_trabajador,access.pila.subtipo.trabajador,model_pila_subtipo_trabajador,,1,1,1,1

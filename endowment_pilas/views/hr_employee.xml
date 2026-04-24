@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_employee_form_inherit_residencia" model="ir.ui.view">
+        <field name="name">hr.employee.form.inherit.residencia</field>
+        <field name="model">hr.employee</field>
+        <field name="inherit_id" ref="hr.view_employee_form"/>
+        <field name="arch" type="xml">
+            
+            <xpath expr="//field[@name='is_non_resident']" position="after">
+                <field name="date_resident"/>
+            </xpath>
+
+            <xpath expr="//notebook" position="inside">
+            <page string="Cotizante UPC adicional" name="upc_info">
+                <group>
+                    <group string="Identificación Adicional">
+                        <label for="l10n_latam_identification_type_id" string="Identificación UPC"/>
+                        <div class="o_row">
+                            <field name="l10n_latam_identification_type_id" 
+                                   placeholder="Tipo de Documento" 
+                                   options="{'no_open': True, 'no_create': True}"
+                                   domain="[('country_id.code', '=', 'CO')]"/>
+                            <field name="upc_identification_number" 
+                                   placeholder="Número (ej. 860503159)"/>
+                        </div>
+                    </group>
+                </group>
+            </page>
+            </xpath>
+            
+        </field>
+    </record>
+</odoo>
