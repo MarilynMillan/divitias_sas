@@ -18,6 +18,7 @@
                 </group>
                 <footer>
                     <button name="action_generate_excel_report" string="Generar Excel" type="object" class="btn-primary"/>
+                    <button name="action_generate_txt_pila" string="Generar TXT Plano" type="object" class="btn-primary"/>
 
 
                     <button string="Cancelar" class="btn-secondary" special="cancel"/>

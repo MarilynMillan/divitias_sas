@@ -759,70 +759,326 @@ class PayrollExcelWizard(models.TransientModel):
         """ Limpieza de datos y ajuste de ancho fijo """
         val = str(value).strip().upper() if value and not pd.isna(value) else ""
 
-        # Lógica para Novedades (IGE, LMA, IRP) - Posición 152 corregida
-        if length == 2 and field_type == 'text':
-            if val in ['SI', 'S', 'X', '1', 'TRUE']:
-                return 'X '.ljust(2)
-            return '  '
+        # Novedades a veces van con 'X'
+        if length == 2 and field_type == 'text' and val in ['SI', 'S', 'X', '1', 'TRUE']:
+            return 'X '
 
         if field_type == 'num':
-            # Deja solo números y rellena con ceros a la izquierda
-            clean_num = "".join(filter(str.isdigit, val))
+            # Solo números y relleno de ceros
+            clean_num = "".join(filter(str.isdigit, val.split('.')[0]))
             return clean_num.zfill(length)
 
-        # Rellena con espacios a la derecha para texto
+        if field_type == 'float_7dec':
+            try:
+                num = float(val)
+                # La estructura pide como tarifa ej. 0.1600000
+                # o el caso "0.0000000" para valores en 0
+                formatted = f"{num:.7f}"
+                # El usuario mando anchos de 9. "0.1600000" es len 9.
+                return formatted.rjust(length)[:length]
+            except:
+                return "0.0000000".rjust(length)[:length]
+
+        if field_type == 'float_5dec':
+            try:
+                num = float(val)
+                formatted = f"{num:.5f}"
+                return formatted.rjust(length)[:length]
+            except:
+                return "0.00000".rjust(length)[:length]
+
+        # Texto normal: alinea a la izquierda, rellena espacios
         return val.ljust(length)[:length]
 
 
     def action_generate_txt_pila(self):
-        """ Convierte el Excel cargado en un archivo TXT plano para Aportes en Línea """
+        """ Genera el Archivo Plano (TXT) con estructura Tipo 1 y Tipo 2 de PILA MinSalud """
         self.ensure_one()
-        if not self.plantilla_excel:
-            raise UserError(_("Por favor, suba primero el archivo Excel del cliente."))
 
-        # 1. Leer el archivo cargado
-        file_data = base64.b64decode(self.plantilla_excel)
-        try:
-            try:
-                df = pd.read_excel(io.BytesIO(file_data))
-            except:
-                df = pd.read_csv(io.BytesIO(file_data))
-        except Exception as e:
-            raise UserError(_("No se pudo leer el archivo. Asegúrese de que sea un Excel válido. Error: %s") % str(e))
+        domain = [('state', '=', 'done')]
+        if self.date_from: domain.append(('date_from', '>=', self.date_from))
+        if self.date_to: domain.append(('date_to', '<=', self.date_to))
+        if self.payslip_run_id: domain.append(('payslip_run_id', '=', self.payslip_run_id.id))
 
+        payslips = self.env['hr.payslip'].search(domain)
+        if not payslips:
+            raise UserError(_("No se encontraron nóminas validadas para los filtros seleccionados."))
+
+        company = self.env.company
         lines = []
-        for _, row in df.iterrows():
-            # --- CONSTRUCCIÓN DEL REGISTRO TIPO 2 (ANCHO FIJO 298) ---
-            line = "02" # Registro Tipo 2 (Pos 1-2)
 
-            # Documento (Pos 3-18) - Buscamos el nombre de columna en tu excel viejo
-            identificacion = row.get('No. Id') or row.get('Identificación') or ""
-            line += self._format_pila(identificacion, 16, 'num')
+        # =========================================================================
+        # REGISTRO TIPO 1 (ENCABEZADO DE LA EMPRESA)
+        # =========================================================================
+        # Nota: Construimos a mano usando el formato quemado que funciona del cliente
+        # para evitar fallos del T1 por ahora.
+        periodo_salud = self.date_from.strftime('%Y-%m') if self.date_from else "2026-01"
+        periodo_nosalud = self.date_to.strftime('%Y-%m') if self.date_to else "2025-12"
 
-            # Espacios hasta llegar a la posición 147
-            line = line.ljust(147)
+        # 011000...
+        base_t1 = f"0110001{self._format_pila(company.name, 200)}S"
+        base_t1 = base_t1.ljust(208)
+        base_t1 += f"NI{self._format_pila(company.vat or '000000000', 16, 'num')}0E                    S54        "
+        base_t1 += f"COLMENA ".ljust(40) # ARL Quemada o usar company
+        base_t1 += f"14-11 {periodo_nosalud}{periodo_salud}0000000000          000440000367690240100"
+        base_t1 = base_t1.ljust(305) # Ajustado al tamano del string del ejemplo T1
+        lines.append(base_t1)
 
-            # --- SECCIÓN DE NOVEDADES (POSICIONES CRÍTICAS) ---
-            # Pos 148-149: IGE
-            line += self._format_pila(row.get('Incapacidad General'), 2)
-            # Pos 150-151: LMA
-            line += self._format_pila(row.get('Licencia Maternidad Paternidad'), 2)
-            # Pos 152-153: IRP (¡Aquí se soluciona el error de Aportes en Línea!)
-            line += self._format_pila(row.get('Incapacidad Riesgos Profesionales'), 2)
+        # =========================================================================
+        # REGISTRO TIPO 2 (DETALLE DE EMPLEADOS)
+        # =========================================================================
+        row_counter = 1
 
-            # --- FINALIZACIÓN ---
-            # Rellenar con espacios hasta completar los 298 caracteres exactos
-            line = line.ljust(298)
-            lines.append(line)
+        for payslip in payslips:
+            employee = payslip.employee_id
+            contract = payslip.contract_id
 
-        # Unir líneas y convertir a Base64
+            # Identificación
+            mapeo_id = {
+                'Cédula de ciudadanía': 'CC',
+                'Cédula de extranjería': 'CE',
+                'Tarjeta de Identidad': 'TI',
+                'Registro Civil': 'RC',
+                'Pasaporte': 'PA',
+                'Permiso por Protección Temporal': 'PT',
+                'PEP (Permiso Especial de Permanencia)': 'PE',
+                'NIT': 'NI',
+            }
+            tipo_doc_rec = employee.employee_address_home.l10n_latam_identification_type_id
+            tipo_doc_abreviado = mapeo_id.get(tipo_doc_rec.name or '', 'CC')
+            identificacion = str(employee.employee_address_home.vat or '').replace('.', '').replace('-', '').strip()
+
+            # Tipo cotizante (Ej: 01 Dependiente)
+            tipo_cotizante = "01"
+            if contract and contract.pila_tipo_trabajador_id:
+                tc_str = contract.pila_tipo_trabajador_id.name
+                tipo_cotizante = "".join(filter(str.isdigit, tc_str)).zfill(2)
+                if not tipo_cotizante or tipo_cotizante == "00": tipo_cotizante = "01"
+
+            # Subtipo
+            sub_cotizante = "00"
+            if contract and contract.pila_subtipo_trabajador_id:
+                stc_str = contract.pila_subtipo_trabajador_id.name
+                sub_cotizante = "".join(filter(str.isdigit, stc_str)).zfill(2)
+                if not sub_cotizante: sub_cotizante = "00"
+
+            # Nombres
+            p_ape = employee.employee_address_home.last_name or ""
+            s_ape = employee.employee_address_home.second_last_name or ""
+            p_nom = employee.employee_address_home.first_name or ""
+            s_nom = employee.employee_address_home.middle_name or ""
+
+            salario = contract.wage if contract else 0.0
+
+            # Novedades (ausencias)
+            ABSENCE_CODES = ['SLN', 'IGE', 'LMA', 'VAL-LR', 'AVP', 'VCT', 'IRL']
+            leaves = self.env['hr.leave'].search([
+                ('employee_id', '=', employee.id),
+                ('state', '=', 'validate'),
+                ('date_from', '<=', self.date_to),
+                ('date_to', '>=', self.date_from),
+            ])
+            novedades = {code: ' ' for code in ABSENCE_CODES}
+            for leave in leaves:
+                novelty_code = leave.holiday_status_id.pila_novelty_code
+                if novelty_code in novedades:
+                    novedades[novelty_code] = 'X'
+
+            # Variables Numéricas
+            claves_reporte = [
+                'valor_cotizacion_pension', 'valor_cotizacion_salud', 'valor_cotizacion_riesgo',
+                'valor_cotizacion_ccf', 'ibc', 'ibc_otros_parafiscales'
+            ]
+            valores_reglas = {k: 0.0 for k in claves_reporte}
+            for line in payslip.line_ids:
+                tipo = line.salary_rule_id.tipo_reporte_excel
+                if tipo and tipo in valores_reglas:
+                    valores_reglas[tipo] += line.total
+
+            ibc = valores_reglas['ibc']
+
+            cot_pension = valores_reglas['valor_cotizacion_pension']
+            cot_salud = valores_reglas['valor_cotizacion_salud']
+            cot_arl = valores_reglas['valor_cotizacion_riesgo']
+            cot_caja = valores_reglas['valor_cotizacion_ccf']
+
+            # Días cotizados
+            dias_pension = 0
+            dias_salud = 0
+            dias_arl = 0
+            dias_caja = 0
+            horas_laboradas = 0
+
+            for worked_day_line in payslip.worked_days_line_ids:
+                days = int(worked_day_line.number_of_days)
+                hours = int(worked_day_line.number_of_hours)
+                code = worked_day_line.code
+                if code == 'pension': dias_pension += days
+                elif code == 'salud': dias_salud += days
+                elif code == 'arl': dias_arl += days
+                elif code == 'ccf': dias_caja += days
+
+                if code == 'WORK100':
+                    horas_laboradas += hours
+
+            # Administradoras y Tarifas
+            pension_admin = contract.get_admin_by_type('pension')
+            cod_pension = pension_admin.code if pension_admin else "230301"
+            t_pension = contract.get_tarifa_by_type('pension') or 0.16
+
+            salud_admin = contract.get_admin_by_type('salud')
+            cod_salud = salud_admin.code if salud_admin else "EPS005"
+            t_salud = contract.get_tarifa_by_type('salud') or 0.125
+
+            caja_admin = contract.get_admin_by_type('ccf')
+            cod_caja = caja_admin.code if caja_admin else "CCF43"
+            t_caja = contract.get_tarifa_by_type('ccf') or 0.04
+
+            arl_admin = contract.get_admin_by_type('arl')
+            cod_arl = arl_admin.code if arl_admin else ""
+            t_arl = contract.get_tarifa_by_type('arl') or 0.00522
+
+            # === INICIO CONSTUCCIÓN ESTRUCTURA TIPO 2 (Ancho Fijo) ===
+            # Constrimos hasta los 693 caracteres exactos
+            line2 = ""
+            line2 += "02"                               # (1-2) Tipo Reg
+            line2 += self._format_pila(row_counter, 5, 'num') # (3-7) Seq
+            line2 += self._format_pila(tipo_doc_abreviado, 2) # (8-9) Tipo Doc
+            line2 += self._format_pila(identificacion, 16)    # (10-25) Num Doc
+            line2 += self._format_pila(tipo_cotizante, 2, 'num') # (26-27) Tipo Cotiz
+            line2 += self._format_pila(sub_cotizante, 2, 'num') # (28-29) Subtipo
+            line2 += " "                                # (30) Extranjero
+            line2 += "63001"                            # (31-35) Depto/Ciudad (quemado)
+            line2 += self._format_pila(p_ape, 20)       # (36-55) Ape1
+            line2 += self._format_pila(s_ape, 30)       # (56-85) Ape2
+            line2 += self._format_pila(p_nom, 20)       # (86-105) Nom1
+            line2 += self._format_pila(s_nom, 30)       # (106-135) Nom2
+
+            # (136-150) Banderas Novedades (ING, RET, VSP, SLN, IGE, LMA...)
+            # " " o "X"
+            flag_ing = "X" if getattr(contract, 'pila_ingreso_concepto_id', False) else " "
+            flag_ret = "X" if getattr(contract, 'pila_retiro_concepto_id', False) else " "
+
+            line2 += flag_ing                           # 136 ING
+            line2 += flag_ret                           # 137 RET
+            line2 += " "                                # 138 TDE
+            line2 += " "                                # 139 TAE
+            line2 += " "                                # 140 TDP
+            line2 += " "                                # 141 TAP
+            line2 += " "                                # 142 VSP
+            line2 += " "                                # 143 VST
+            line2 += novedades.get('SLN', ' ')          # 144 SLN
+            line2 += novedades.get('IGE', ' ')          # 145 IGE
+            line2 += novedades.get('LMA', ' ')          # 146 LMA
+            line2 += novedades.get('VAL-LR', ' ')       # 147 VAC
+            line2 += novedades.get('AVP', ' ')          # 148 AVP
+            line2 += novedades.get('VCT', ' ')          # 149 VCT
+            line2 += novedades.get('IRL', ' ')          # 150 IRL
+
+            line2 += " 00"                              # 151-153 (Desconocido / Correcciones)
+
+            # Códigos Administradoras (154-183)
+            line2 += self._format_pila(cod_pension, 6)  # 154-159 Cod Pens
+            line2 += "      "                           # 160-165 Espacio (o EPS destino)
+            line2 += self._format_pila(cod_salud, 6)    # 166-171 Cod EPS
+            line2 += "      "                           # 172-177 Espacio (o AFP destino)
+            line2 += self._format_pila(cod_caja, 6)     # 178-183 Cod CCF
+
+            # Días (184-191)
+            line2 += self._format_pila(dias_pension, 2, 'num')  # 184-185 Dias P
+            line2 += self._format_pila(dias_salud, 2, 'num')    # 186-187 Dias S
+            line2 += self._format_pila(dias_arl, 2, 'num')      # 188-189 Dias A
+            line2 += self._format_pila(dias_caja, 2, 'num')     # 190-191 Dias C
+
+            # Salario e Integral
+            line2 += self._format_pila(int(salario), 9, 'num')  # 192-200 Salario
+            line2 += "X" if (contract and contract.wage_integral) else " "   # 201 Integral
+
+            # IBCs
+            line2 += self._format_pila(int(ibc), 9, 'num')      # 202-210 IBC P
+            line2 += self._format_pila(int(ibc), 9, 'num')      # 211-219 IBC S
+            line2 += self._format_pila(int(ibc), 9, 'num')      # 220-228 IBC A
+            line2 += self._format_pila(int(ibc), 9, 'num')      # 229-237 IBC C
+
+            # Pensión
+            line2 += self._format_pila(t_pension, 9, 'float_7dec') # 238-246 Tarifa Pens
+            line2 += self._format_pila(int(cot_pension), 9, 'num') # 247-255 Cot Pens
+            line2 += self._format_pila(0, 9, 'num')               # 256-264 Aporte Sol
+            line2 += self._format_pila(0, 9, 'num')               # 265-273 Aporte Sub
+            line2 += self._format_pila(0, 9, 'num')               # 274-282 Val No Ret
+
+            # Salud
+            line2 += self._format_pila(t_salud, 9, 'float_7dec')  # 283-291 Tarifa Sal
+            line2 += self._format_pila(int(cot_salud), 9, 'num')  # 292-300 Cot Sal
+            line2 += self._format_pila(0, 9, 'num')               # 301-309 UPC
+
+            # Incapacidades (Aut IGE, Val IGE, Aut LMA, Val LMA)
+            line2 += "               "                            # 310-324 Num Aut IGE
+            line2 += self._format_pila(0, 9, 'num')               # 325-333 Val IGE
+            line2 += "               "                            # 334-348 Num Aut LMA
+            line2 += self._format_pila(0, 9, 'num')               # 349-357 Val LMA
+
+            # ARL
+            line2 += self._format_pila(t_arl, 9, 'float_7dec')    # 358-366 Tarifa ARL
+            line2 += self._format_pila("0000", 9, 'num')          # 367-375 Centro Trab
+            line2 += self._format_pila(int(cot_arl), 9, 'num')    # 376-384 Cot ARL
+
+            # CCF
+            line2 += self._format_pila(t_caja, 9, 'float_7dec')   # 385-393 Tarifa CCF
+            line2 += self._format_pila(int(cot_caja), 9, 'num')   # 394-402 Cot CCF
+
+            # SENA, ICBF, ESAP, MEN
+            line2 += self._format_pila(0, 9, 'float_7dec')        # 403-411 T.SENA
+            line2 += self._format_pila(0, 9, 'num')               # 412-420 Cot SENA
+            line2 += self._format_pila(0, 9, 'float_7dec')        # 421-429 T.ICBF
+            line2 += self._format_pila(0, 9, 'num')               # 430-438 Cot ICBF
+            line2 += self._format_pila(0, 9, 'float_7dec')        # 439-447 T.ESAP
+            line2 += self._format_pila(0, 9, 'num')               # 448-456 Cot ESAP
+            line2 += self._format_pila(0, 9, 'float_7dec')        # 457-465 T.MEN
+            line2 += self._format_pila(0, 9, 'num')               # 466-474 Cot MEN
+
+            # Adicional UPC, Exonerado, ARL
+            line2 += "00"                                         # 475-476 Tipo Doc UPC
+            line2 += self._format_pila("", 16)                    # 477-492 Num Doc UPC
+            line2 += "S" if (valores_reglas.get('exonerado_1607', 0) > 0) else " " # 493 Exonerado
+            line2 += self._format_pila(cod_arl, 6)                # 494-499 Codigo ARL
+            clase = contract.clase if contract and contract.clase else "1"
+            line2 += self._format_pila(clase, 1)                  # 500 Clase Riesgo
+            line2 += " "                                          # 501 Ind Tarif Esp
+
+            # BLOQUE DE FECHAS (Novedades)
+            # Todo este bloque ocupa 150 caracteres en el archivo base (501 a 651)
+            # Rellenamos de momento con los espacios del txt original, asegurando q mide 150
+            bloque_fechas = " " * 150
+            # Si hay fecha de ingreso y esta en el flag
+            if flag_ing == "X" and getattr(contract, 'date_start', False):
+                d_ing = contract.date_start.strftime("%Y-%m-%d")
+                bloque_fechas = d_ing + bloque_fechas[10:]
+
+            if flag_ret == "X" and getattr(contract, 'date_end', False):
+                d_ret = contract.date_end.strftime("%Y-%m-%d")
+                bloque_fechas = bloque_fechas[:10] + d_ret + bloque_fechas[20:]
+
+            line2 += bloque_fechas
+
+            # Final
+            line2 += self._format_pila(0, 9, 'num')               # 652-660 IBC Otros Parafiscales
+            line2 += self._format_pila(horas_laboradas, 3, 'num') # 661-663 Horas Lab
+            line2 += self._format_pila("", 10)                    # 664-673 Fecha Rad Ext
+
+            # Completamos con lo sobrante de la línea para hacer el mach exacto
+            line2 = line2.ljust(693)
+
+            lines.append(line2)
+            row_counter += 1
+
         final_txt = "\r\n".join(lines)
         attachment_name = 'PILA_APORTES_%s.txt' % self.date_to
 
         attachment = self.env['ir.attachment'].create({
             'name': attachment_name,
             'type': 'binary',
-            'datas': base64.b64encode(final_txt.encode('latin-1')), # Latin-1 para formato ANSI
+            'datas': base64.b64encode(final_txt.encode('latin-1')),
             'mimetype': 'text/plain',
         })
 
