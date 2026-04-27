@@ -728,15 +728,32 @@ class PayrollExcelWizard(models.TransientModel):
         #if sheet.max_row > last_data_row:
             #sheet.delete_rows(last_data_row + 1, sheet.max_row - last_data_row)
 
-        # 1. Guardamos el archivo directamente (SIN borrar filas sobrantes)
-        # 1. Guardar en el buffer
-        wb.save(output)
+        # 1. Guardamos el archivo temporalmente (SIN borrar filas sobrantes)
+        temp_buffer = io.BytesIO()
+        wb.save(temp_buffer)
+        temp_buffer.seek(0)
 
-        # 2. OBTENER el valor PRIMERO
-        out_data = output.getvalue()
+        # 2. Usar Pandas + XlsxWriter para generar el archivo final "Limpio"
+        # Esto elimina los metadatos de dibujo corruptos que causan la reparación
+        import pandas as pd
+        df = pd.read_excel(temp_buffer, sheet_name=sheet.title, header=None)
 
-        # 3. CERRAR el buffer DESPUÉS
-        output.close()
+        output_clean = io.BytesIO()
+        writer = pd.ExcelWriter(output_clean, engine='xlsxwriter')
+        df.to_excel(writer, sheet_name='Liquidaciones', index=False, header=False)
+
+        # 3. Recuperar el libro de xlsxwriter para aplicar anchos de columna
+        workbook = writer.book
+        worksheet = writer.sheets['Liquidaciones']
+
+        # Ajustamos los anchos aquí (XlsxWriter lo hace mucho mejor)
+        worksheet.set_column('A:A', 10) # Columna 1
+        worksheet.set_column('B:CZ', 18) # El resto
+
+        writer.close() # Importante cerrar el writer de pandas
+        out_data = output_clean.getvalue()
+        output_clean.close()
+        temp_buffer.close()
 
         # 4. Crear el adjunto
         attachment = self.env['ir.attachment'].create({
